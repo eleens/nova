@@ -47,6 +47,7 @@ class BaseRamFilter(filters.BaseHostFilter):
                        'usable_ram': total_usable_ram_mb})
             return False
 
+
         ram_allocation_ratio = self._get_ram_allocation_ratio(host_state,
                                                               spec_obj)
 
