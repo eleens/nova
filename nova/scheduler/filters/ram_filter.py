@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 # Copyright (c) 2011 OpenStack Foundation
 # Copyright (c) 2012 Cloudscaling
 # All Rights Reserved.
@@ -45,10 +46,12 @@ class BaseRamFilter(filters.BaseHostFilter):
                        'usable_ram': total_usable_ram_mb})
             return False
 
+        # 获取物理机的内存复用比，优先获取compute_node中的数据，如果数据是0，就拿配置文件中的，如果配置文件中也是0，就用默认值2.0。
+        # 注意， 如果有aggregate filter 会优先获取aggregate_metadate 中配置的复用比
         ram_allocation_ratio = self._get_ram_allocation_ratio(host_state,
                                                               spec_obj)
 
-        memory_mb_limit = total_usable_ram_mb * ram_allocation_ratio
+        memory_mb_limit = total_usable_ram_mb * ram_allocation_ratio  # 复用之后的总量
         used_ram_mb = total_usable_ram_mb - free_ram_mb
         usable_ram = memory_mb_limit - used_ram_mb
         if not usable_ram >= requested_ram:
