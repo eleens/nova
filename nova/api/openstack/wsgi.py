@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright 2013 IBM Corp.
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
@@ -577,7 +578,10 @@ class Resource(wsgi.Application):
                 # yield is the preprocessing stage
                 try:
                     with ResourceExceptionHandler():
+                        # 判断是否是个生成器，如果是个生成器，就调用next（）方法启动生成器，执行
                         gen = ext(req=request, **action_args)
+                        # gen 是一个生成器的实例，如果生成器里面没有抛异常，yield后面没有值，也没有return，则response是None
+                        # response是None，后面才会执行主api和post_process_extensions的方法
                         response = next(gen)
                 except Fault as ex:
                     response = ex
@@ -587,9 +591,11 @@ class Resource(wsgi.Application):
                     return response, []
 
                 # No response, queue up generator for post-processing
+                # 把生成器实例添加到post中，为后面的post_process_extensions做准备
                 post.append(gen)
             else:
                 # Regular functions only perform post-processing
+                # 把扩展api添加到post中，为后面的post_process_extensions做准备
                 post.append(ext)
 
         # None is response, it means we keep going. We reverse the
@@ -605,6 +611,7 @@ class Resource(wsgi.Application):
                 # processing
                 try:
                     with ResourceExceptionHandler():
+                        # 如果是生成器，这里可能直接报StopIteration的错，不过这是正常的，因为前面pre的方法已经执行过这个生成器
                         response = ext.send(resp_obj)
                 except StopIteration:
                     # Normal exit of generator
@@ -615,6 +622,7 @@ class Resource(wsgi.Application):
                 # Regular functions get post-processing...
                 try:
                     with ResourceExceptionHandler():
+                        # 如果不是生成器，这里直接执行扩展api，注意，可能没有返回结果，因为有的生成器只是在resp_obj中tianjia1
                         response = ext(req=request, resp_obj=resp_obj,
                                        **action_args)
                 except exception.VersionNotFoundForAPIMethod:
@@ -636,6 +644,7 @@ class Resource(wsgi.Application):
 
     @webob.dec.wsgify(RequestClass=Request)
     def __call__(self, request):
+        # 这个方法是route首次进入的方法
         """WSGI method that controls (de)serialization and method dispatch."""
 
         if self.support_api_request_version:
@@ -668,15 +677,23 @@ class Resource(wsgi.Application):
         #            function.  If we try to audit __call__(), we can
         #            run into troubles due to the @webob.dec.wsgify()
         #            decorator.
+        # 主要的就是调用下面的这个方法
         return self._process_stack(request, action, action_args,
                                content_type, body, accept)
 
     def _process_stack(self, request, action, action_args,
                        content_type, body, accept):
+
+        # 这里主要的四步
+        # 1）获取当前请求的方法和与他相关的所有扩展api
+        # 2）调用self.pre_process_extensions（）方法，执行需要在主api之前扩展的api
+        # 3）调用self.dispatch（）方法，执行主api
+        # 4）调用self.post_process_extensions（）方法，执行需要在主api之后扩展的api
         """Implement the processing stack."""
 
         # Get the implementing method
         try:
+            # 获取扩展api和主api的方法
             meth, extensions = self.get_method(request, action,
                                                content_type, body)
         except (AttributeError, TypeError):
@@ -712,6 +729,7 @@ class Resource(wsgi.Application):
             return Fault(webob.exc.HTTPBadRequest(explanation=msg))
 
         # Update the action args
+        # 更新action_args的参数，如果action是'action', 则把body的信息更新到action_args中
         action_args.update(contents)
 
         project_id = action_args.pop("project_id", None)
@@ -725,16 +743,18 @@ class Resource(wsgi.Application):
             return Fault(webob.exc.HTTPBadRequest(explanation=msg))
 
         # Run pre-processing extensions
+        # 执行该方法可以使得部分扩展api在主api之前执行
         response, post = self.pre_process_extensions(extensions,
                                                      request, action_args)
-
+        # 注意这是前面返回没有response的时候才执行的,如果前面的方法抛出了异常，或者是生成器里面抛出了异常，这里的主api就不会执行
         if not response:
             try:
                 with ResourceExceptionHandler():
+                    # 执行主api
                     action_result = self.dispatch(meth, request, action_args)
             except Fault as ex:
                 response = ex
-
+        # 注意这是前面返回没有response的时候才执行的
         if not response:
             # No exceptions; convert action_result into a
             # ResponseObject
@@ -752,6 +772,7 @@ class Resource(wsgi.Application):
                 if hasattr(meth, 'wsgi_code'):
                     resp_obj._default_code = meth.wsgi_code
                 # Process post-processing extensions
+                # 执行该方法可以使得部分扩展api在主api之后执行,比如在返回结果中添加部分属性
                 response = self.post_process_extensions(post, resp_obj,
                                                         request, action_args)
 
